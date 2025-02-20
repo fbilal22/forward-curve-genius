@@ -31,6 +31,13 @@ interface MergedDataRow {
   [key: string]: number | string | null;
 }
 
+interface MaturityData {
+  maturity: string;
+  displayLabel: string;
+  price: number | null;
+  timeToMaturity: number | null;
+}
+
 const Index = () => {
   const { toast } = useToast();
   const [deliveryDates, setDeliveryDates] = useState<DeliveryDate[]>([]);
@@ -44,6 +51,7 @@ const Index = () => {
   const [curveData, setCurveData] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [previewData, setPreviewData] = useState<MergedDataRow[]>([]);
+  const [selectedDateData, setSelectedDateData] = useState<MaturityData[]>([]);
 
   const handleSpotFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files?.length) return;
@@ -250,27 +258,63 @@ const Index = () => {
       return;
     }
 
-    const newCurveData = [
+    const selectedDateObj = new Date(selectedDate);
+
+    const getThirdFriday = (year: string, month: string): Date => {
+      const firstDay = new Date(parseInt(year), parseInt(month) - 1, 1);
+      let fridayCount = 0;
+      let day = firstDay;
+      
+      while (fridayCount < 3) {
+        if (day.getDay() === 5) { // 5 represents Friday
+          fridayCount++;
+        }
+        if (fridayCount < 3) {
+          day.setDate(day.getDate() + 1);
+        }
+      }
+      
+      return day;
+    };
+
+    const calculateTimeToMaturity = (fromDate: Date, toDate: Date): number => {
+      const diffTime = toDate.getTime() - fromDate.getTime();
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Convert to days
+    };
+
+    const maturityData: MaturityData[] = [
       ...(dayData.spot !== undefined ? [{
         maturity: 'spot',
         displayLabel: 'Spot',
-        price: dayData.spot
+        price: dayData.spot as number,
+        timeToMaturity: 0
       }] : []),
       ...deliveryDates
         .sort((a, b) => a.id.localeCompare(b.id))
         .map(delivery => {
           const monthName = MONTHS.find(m => m.value === delivery.month)?.label;
           const displayLabel = `${monthName} ${delivery.year}`;
+          const maturityDate = getThirdFriday(delivery.year, delivery.month);
+          const timeToMaturity = calculateTimeToMaturity(selectedDateObj, maturityDate);
           
           return {
             maturity: delivery.id,
             displayLabel,
-            price: dayData[delivery.id]
+            price: dayData[delivery.id] as number | null,
+            timeToMaturity
           };
         })
     ].filter(point => point.price !== null);
 
-    setCurveData(newCurveData);
+    setSelectedDateData(maturityData);
+
+    const curveData = maturityData.map(data => ({
+      maturity: data.maturity,
+      displayLabel: data.displayLabel,
+      price: data.price
+    }));
+
+    setCurveData(curveData);
   };
 
   return (
@@ -450,6 +494,38 @@ const Index = () => {
                     Générer la courbe
                   </Button>
                 </div>
+
+                {selectedDateData.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="mt-4 overflow-x-auto"
+                  >
+                    <table className="min-w-full border-collapse border border-border">
+                      <thead>
+                        <tr>
+                          <th className="border border-border p-2 bg-muted">Maturité</th>
+                          <th className="border border-border p-2 bg-muted">Prix</th>
+                          <th className="border border-border p-2 bg-muted">Time to Maturity (jours)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedDateData.map((data, idx) => (
+                          <tr key={idx}>
+                            <td className="border border-border p-2">{data.displayLabel}</td>
+                            <td className="border border-border p-2">
+                              {data.price !== null ? data.price.toFixed(2) : '-'}
+                            </td>
+                            <td className="border border-border p-2">
+                              {data.timeToMaturity}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </motion.div>
+                )}
 
                 {curveData.length > 0 && (
                   <div className="h-96 mt-4">
