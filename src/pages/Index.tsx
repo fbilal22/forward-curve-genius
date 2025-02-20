@@ -265,7 +265,8 @@ const Index = () => {
       .map(d => ({
         month: d.month,
         label: MONTHS.find(m => m.value === d.month)?.label || '',
-        id: d.id
+        id: d.id,
+        originalId: d.id
       }))
       .sort((a, b) => parseInt(a.month) - parseInt(b.month));
 
@@ -316,11 +317,12 @@ const Index = () => {
         const maturityDate = getThirdFriday(maturity.year, maturity.month);
         const timeToMaturity = calculateTimeToMaturity(selectedDateObj, maturityDate);
         const displayLabel = `${maturity.label} ${maturity.year}`;
+        const price = dayData[maturity.originalId];
         
         return {
           maturity: maturity.id,
           displayLabel,
-          price: dayData[`${maturity.year}-${maturity.month}`] as number | null,
+          price: price as number | null,
           timeToMaturity
         };
       })
