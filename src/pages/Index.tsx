@@ -260,6 +260,7 @@ const Index = () => {
 
     const selectedDateObj = new Date(selectedDate);
     const selectedYear = selectedDateObj.getFullYear();
+    const selectedMonth = selectedDateObj.getMonth() + 1;
 
     const monthsData = deliveryDates
       .map(d => ({
@@ -273,10 +274,13 @@ const Index = () => {
     let currentYear = selectedYear;
     let previousMonth = "00";
     const maturityDates = monthsData.map(monthData => {
-      if (parseInt(monthData.month) < parseInt(previousMonth)) {
-        currentYear += 1;
+      const monthNumber = parseInt(monthData.month);
+      
+      if (monthNumber <= selectedMonth) {
+        currentYear = selectedYear + 1;
+      } else {
+        currentYear = selectedYear;
       }
-      previousMonth = monthData.month;
       
       return {
         ...monthData,
