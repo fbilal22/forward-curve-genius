@@ -1,7 +1,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Label } from 'recharts';
 import { useState } from 'react';
 import Papa from 'papaparse';
 import ProductConfig from '@/components/forward-curve/ProductConfig';
@@ -10,26 +10,84 @@ import FileUploader from '@/components/forward-curve/FileUploader';
 import { motion } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
 
+interface DeliveryDate {
+  month: string;
+  year: string;
+  label: string;
+  id: string;
+}
+
+interface PriceData {
+  date: string;
+  price: number;
+}
+
+interface FileData {
+  [key: string]: PriceData[];
+}
+
+interface MergedDataRow {
+  date: string;
+  [key: string]: number | string | null;
+}
+
 const Index = () => {
   const { toast } = useToast();
-  const [deliveryDates, setDeliveryDates] = useState([]);
+  const [deliveryDates, setDeliveryDates] = useState<DeliveryDate[]>([]);
   const [commodity, setCommodity] = useState('');
   const [currency, setCurrency] = useState('');
-  const [filesData, setFilesData] = useState({});
-  const [mergedData, setMergedData] = useState([]);
-  const [fileMaturityMap, setFileMaturityMap] = useState({});
+  const [filesData, setFilesData] = useState<FileData>({});
+  const [spotData, setSpotData] = useState<PriceData[]>([]);
+  const [mergedData, setMergedData] = useState<MergedDataRow[]>([]);
+  const [fileMaturityMap, setFileMaturityMap] = useState<Record<string, string>>({});
   const [selectedDate, setSelectedDate] = useState('');
-  const [curveData, setCurveData] = useState([]);
+  const [curveData, setCurveData] = useState<any[]>([]);
   const [error, setError] = useState('');
-  const [previewData, setPreviewData] = useState([]);
+  const [previewData, setPreviewData] = useState<MergedDataRow[]>([]);
 
-  const handleAddDeliveryDate = (month, year) => {
+  const handleSpotFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
+
+    const file = event.target.files[0];
+    try {
+      const text = await file.text();
+      const result = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        encoding: "utf-8"
+      });
+
+      const processedData = result.data
+        .filter((row: any) => row.Date && row.Price)
+        .map((row: any) => ({
+          date: parseDate(row.Date),
+          price: parsePrice(row.Price)
+        }))
+        .filter((row: any) => row.date && row.price !== null);
+
+      setSpotData(processedData);
+      toast({
+        title: "Données spot chargées",
+        description: "Le fichier des prix spot a été traité avec succès.",
+      });
+    } catch (err) {
+      toast({
+        title: "Erreur",
+        description: `Erreur lors de la lecture du fichier spot: ${err instanceof Error ? err.message : 'Erreur inconnue'}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddDeliveryDate = (month: string, year: string) => {
     if (!month || !year) {
       setError("Veuillez sélectionner un mois et une année");
       return;
     }
 
-    const monthLabel = MONTHS.find(m => m.value === month).label;
+    const monthLabel = MONTHS.find(m => m.value === month)?.label;
+    if (!monthLabel) return;
+    
     const maturityLabel = `${monthLabel} ${year}`;
     const maturityId = `${year}-${month}`;
 
@@ -41,8 +99,8 @@ const Index = () => {
     setDeliveryDates([
       ...deliveryDates,
       {
-        month: month,
-        year: year,
+        month,
+        year,
         label: maturityLabel,
         id: maturityId
       }
@@ -55,28 +113,20 @@ const Index = () => {
     });
   };
 
-  const handleRemoveDeliveryDate = (maturityId) => {
-    setDeliveryDates(deliveryDates.filter(d => d.id !== maturityId));
-    toast({
-      title: "Maturité supprimée",
-      description: "La maturité a été supprimée avec succès.",
-    });
-  };
-
-  const parsePrice = (priceStr) => {
+  const parsePrice = (priceStr: string) => {
     if (!priceStr) return null;
     return parseFloat(priceStr.replace(/[^0-9.-]+/g, ''));
   };
 
-  const parseDate = (dateStr) => {
+  const parseDate = (dateStr: string) => {
     if (!dateStr) return null;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return null;
     return date.toISOString().split('T')[0];
   };
 
-  const handleFileUpload = async (event) => {
-    if (deliveryDates.length === 0) {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length || deliveryDates.length === 0) {
       toast({
         title: "Erreur",
         description: "Veuillez définir les maturités avant d'uploader des fichiers",
@@ -86,9 +136,10 @@ const Index = () => {
     }
 
     const uploadedFiles = event.target.files;
-    const newFilesData = {};
+    const newFilesData: FileData = {};
 
-    for (let file of uploadedFiles) {
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const file = uploadedFiles[i];
       try {
         const text = await file.text();
         const result = Papa.parse(text, {
@@ -97,13 +148,13 @@ const Index = () => {
           encoding: "utf-8"
         });
 
-        const processedData = result.data
+        const processedData = (result.data as any[])
           .filter(row => row.Date && row.Price)
           .map(row => ({
             date: parseDate(row.Date),
             price: parsePrice(row.Price)
           }))
-          .filter(row => row.date && row.price !== null);
+          .filter((row): row is PriceData => row.date !== null && row.price !== null);
 
         newFilesData[file.name] = processedData;
         
@@ -114,7 +165,7 @@ const Index = () => {
       } catch (err) {
         toast({
           title: "Erreur",
-          description: `Erreur lors de la lecture du fichier ${file.name}: ${err.message}`,
+          description: `Erreur lors de la lecture du fichier ${file.name}: ${err instanceof Error ? err.message : 'Erreur inconnue'}`,
           variant: "destructive",
         });
         return;
@@ -130,13 +181,6 @@ const Index = () => {
     );
   };
 
-  const handleMaturityAssignment = (fileName, maturityId) => {
-    setFileMaturityMap(prev => ({
-      ...prev,
-      [fileName]: maturityId
-    }));
-  };
-
   const mergeTables = () => {
     try {
       const unmappedFiles = Object.entries(fileMaturityMap)
@@ -148,39 +192,37 @@ const Index = () => {
         return;
       }
 
-      const allDates = new Set();
+      const allDates = new Set<string>();
       Object.values(filesData).forEach(fileData => {
         fileData.forEach(row => allDates.add(row.date));
       });
-
-      const datesList = Array.from(allDates).sort();
       
+      if (spotData.length > 0) {
+        spotData.forEach(row => allDates.add(row.date));
+      }
+
+      const datesList = Array.from(allDates).sort().reverse();
+
       const merged = datesList.map(date => {
-        const rowData = { date };
+        const rowData: MergedDataRow = { date };
+        
+        if (spotData.length > 0) {
+          const spotPrice = spotData.find(d => d.date === date);
+          if (spotPrice) {
+            rowData.spot = spotPrice.price;
+          }
+        }
         
         Object.entries(fileMaturityMap).forEach(([fileName, maturityId]) => {
-          if (!filesData[fileName]) {
-            console.error(`Données manquantes pour le fichier ${fileName}`);
-            return;
-          }
-          
           const fileData = filesData[fileName];
-          const priceData = fileData.find(d => d.date === date);
+          if (!fileData) return;
           
-          if (priceData) {
-            rowData[maturityId] = priceData.price;
-          } else {
-            rowData[maturityId] = null;
-          }
+          const priceData = fileData.find(d => d.date === date);
+          rowData[maturityId] = priceData?.price ?? null;
         });
         
         return rowData;
       });
-
-      if (merged.length === 0) {
-        setError("Aucune donnée n'a pu être fusionnée. Vérifiez le format des fichiers.");
-        return;
-      }
 
       setMergedData(merged);
       setPreviewData(merged.slice(0, 5));
@@ -191,8 +233,7 @@ const Index = () => {
         description: "Les données ont été fusionnées avec succès.",
       });
     } catch (error) {
-      console.error("Erreur complète:", error);
-      setError(`Erreur lors de la fusion des données: ${error.message}`);
+      setError(`Erreur lors de la fusion des données: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     }
   };
 
@@ -209,22 +250,25 @@ const Index = () => {
       return;
     }
 
-    const selectedDateObj = new Date(selectedDate);
-    
-    const newCurveData = deliveryDates
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map(delivery => {
-        const maturityDate = new Date(delivery.year, parseInt(delivery.month) - 1);
-        const monthName = MONTHS.find(m => m.value === delivery.month).label;
-        const displayLabel = `${monthName} ${delivery.year}`;
-        
-        return {
-          maturity: delivery.id,
-          displayLabel,
-          price: dayData[delivery.id]
-        };
-      })
-      .filter(point => point.price !== null);
+    const newCurveData = [
+      ...(dayData.spot !== undefined ? [{
+        maturity: 'spot',
+        displayLabel: 'Spot',
+        price: dayData.spot
+      }] : []),
+      ...deliveryDates
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(delivery => {
+          const monthName = MONTHS.find(m => m.value === delivery.month)?.label;
+          const displayLabel = `${monthName} ${delivery.year}`;
+          
+          return {
+            maturity: delivery.id,
+            displayLabel,
+            price: dayData[delivery.id]
+          };
+        })
+    ].filter(point => point.price !== null);
 
     setCurveData(newCurveData);
   };
@@ -254,9 +298,25 @@ const Index = () => {
             <MaturitySelector
               deliveryDates={deliveryDates}
               onAddDeliveryDate={handleAddDeliveryDate}
-              onRemoveDeliveryDate={handleRemoveDeliveryDate}
+              onRemoveDeliveryDate={(id) => {
+                setDeliveryDates(deliveryDates.filter(d => d.id !== id));
+                toast({
+                  title: "Maturité supprimée",
+                  description: "La maturité a été supprimée avec succès.",
+                });
+              }}
               error={error}
             />
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Données historiques spot (optionnel)</h3>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleSpotFileUpload}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+            </div>
 
             <FileUploader
               onFileUpload={handleFileUpload}
@@ -276,7 +336,10 @@ const Index = () => {
                     <span className="min-w-40">{fileName}:</span>
                     <select
                       value={fileMaturityMap[fileName]}
-                      onChange={(e) => handleMaturityAssignment(fileName, e.target.value)}
+                      onChange={(e) => setFileMaturityMap(prev => ({
+                        ...prev,
+                        [fileName]: e.target.value
+                      }))}
                       className="p-2 border rounded-md bg-white flex-1"
                     >
                       <option value="">Sélectionner une maturité</option>
@@ -328,8 +391,11 @@ const Index = () => {
                         <th className="border border-border p-2 bg-muted">
                           Date
                         </th>
+                        {spotData.length > 0 && (
+                          <th className="border border-border p-2 bg-muted">Spot</th>
+                        )}
                         {Object.keys(previewData[0] || {})
-                          .filter(key => key !== 'date')
+                          .filter(key => key !== 'date' && key !== 'spot')
                           .sort((a, b) => a.localeCompare(b))
                           .map(maturityId => (
                             <th key={maturityId} className="border border-border p-2 bg-muted">
@@ -344,12 +410,17 @@ const Index = () => {
                           <td className="border border-border p-2">
                             {row.date}
                           </td>
+                          {spotData.length > 0 && (
+                            <td className="border border-border p-2">
+                              {typeof row.spot === 'number' ? row.spot.toFixed(2) : '-'}
+                            </td>
+                          )}
                           {Object.keys(row)
-                            .filter(key => key !== 'date')
+                            .filter(key => key !== 'date' && key !== 'spot')
                             .sort((a, b) => a.localeCompare(b))
                             .map((maturityId, cellIdx) => (
                               <td key={cellIdx} className="border border-border p-2">
-                                {typeof row[maturityId] === 'number' ? row[maturityId].toFixed(2) : '-'}
+                                {typeof row[maturityId] === 'number' ? (row[maturityId] as number).toFixed(2) : '-'}
                               </td>
                             ))}
                         </tr>
@@ -391,15 +462,15 @@ const Index = () => {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
                         dataKey="displayLabel"
-                        label={{ value: 'Maturité', position: 'bottom' }}
-                        tick={{ angle: -45 }}
                         height={60}
-                      />
-                      <YAxis
-                        label={{ value: 'Prix', angle: -90, position: 'insideLeft' }}
-                      />
+                      >
+                        <Label value="Maturité" offset={0} position="bottom" />
+                      </XAxis>
+                      <YAxis>
+                        <Label value="Prix" angle={-90} position="insideLeft" />
+                      </YAxis>
                       <Tooltip
-                        formatter={(value) => value.toFixed(2)}
+                        formatter={(value: number) => value.toFixed(2)}
                       />
                       <Legend />
                       <Line
@@ -413,6 +484,16 @@ const Index = () => {
                   </div>
                 )}
               </motion.div>
+            )}
+
+            {error && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-destructive text-sm"
+              >
+                {error}
+              </motion.p>
             )}
           </CardContent>
         </Card>
