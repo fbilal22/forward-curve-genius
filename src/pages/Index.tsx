@@ -259,6 +259,29 @@ const Index = () => {
     }
 
     const selectedDateObj = new Date(selectedDate);
+    const selectedYear = selectedDateObj.getFullYear();
+
+    const monthsData = deliveryDates
+      .map(d => ({
+        month: d.month,
+        label: MONTHS.find(m => m.value === d.month)?.label || '',
+        id: d.id
+      }))
+      .sort((a, b) => parseInt(a.month) - parseInt(b.month));
+
+    let currentYear = selectedYear;
+    let previousMonth = "00";
+    const maturityDates = monthsData.map(monthData => {
+      if (parseInt(monthData.month) < parseInt(previousMonth)) {
+        currentYear += 1;
+      }
+      previousMonth = monthData.month;
+      
+      return {
+        ...monthData,
+        year: currentYear.toString()
+      };
+    });
 
     const getThirdFriday = (year: string, month: string): Date => {
       const firstDay = new Date(parseInt(year), parseInt(month) - 1, 1);
@@ -289,21 +312,18 @@ const Index = () => {
         price: dayData.spot as number,
         timeToMaturity: 0
       }] : []),
-      ...deliveryDates
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map(delivery => {
-          const monthName = MONTHS.find(m => m.value === delivery.month)?.label;
-          const displayLabel = `${monthName} ${delivery.year}`;
-          const maturityDate = getThirdFriday(delivery.year, delivery.month);
-          const timeToMaturity = calculateTimeToMaturity(selectedDateObj, maturityDate);
-          
-          return {
-            maturity: delivery.id,
-            displayLabel,
-            price: dayData[delivery.id] as number | null,
-            timeToMaturity
-          };
-        })
+      ...maturityDates.map(maturity => {
+        const maturityDate = getThirdFriday(maturity.year, maturity.month);
+        const timeToMaturity = calculateTimeToMaturity(selectedDateObj, maturityDate);
+        const displayLabel = `${maturity.label} ${maturity.year}`;
+        
+        return {
+          maturity: maturity.id,
+          displayLabel,
+          price: dayData[`${maturity.year}-${maturity.month}`] as number | null,
+          timeToMaturity
+        };
+      })
     ].filter(point => point.price !== null);
 
     setSelectedDateData(maturityData);
